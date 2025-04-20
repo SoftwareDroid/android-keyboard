@@ -2,6 +2,7 @@ package org.futo.inputmethod.latin.uix
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 
 val ENABLE_SOUND = SettingsKey(
@@ -47,6 +48,11 @@ val AUDIO_FOCUS = SettingsKey(
 val USE_VAD_AUTOSTOP = SettingsKey(
     key = booleanPreferencesKey("use_vad_autostop"),
     default = true
+)
+
+val DEEPGRAM_API_KEY = SettingsKey<String>(
+    key = stringPreferencesKey("deepgram_api_key"),
+    default = ""
 )
 
 val ENGLISH_MODEL_INDEX = SettingsKey(

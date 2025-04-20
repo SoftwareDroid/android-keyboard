@@ -17,11 +17,13 @@ import org.futo.inputmethod.latin.uix.PREFER_BLUETOOTH
 import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
 import org.futo.inputmethod.latin.uix.USE_VAD_AUTOSTOP
 import org.futo.inputmethod.latin.uix.VERBOSE_PROGRESS
+import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
 import org.futo.inputmethod.latin.uix.settings.NavigationItem
 import org.futo.inputmethod.latin.uix.settings.NavigationItemStyle
 import org.futo.inputmethod.latin.uix.settings.ScreenTitle
 import org.futo.inputmethod.latin.uix.settings.ScrollableList
 import org.futo.inputmethod.latin.uix.settings.SettingToggleDataStore
+import org.futo.inputmethod.latin.uix.settings.SettingTextField;
 import org.futo.inputmethod.latin.uix.settings.useDataStore
 
 @Preview
@@ -89,6 +91,12 @@ fun VoiceInputScreen(navController: NavHostController = rememberNavController())
                 title = "Auto-stop on silence",
                 subtitle = "Automatically stop when silence is detected. You may need to manually stop regardless if there's too much background noise. Please also enable long-form voice input to prevent stopping after 30s.",
                 setting = USE_VAD_AUTOSTOP
+            )
+
+            SettingTextField(
+                title = "Deepgram API Key (Third API)",
+                placeholder = "<API-KEY>",
+                field = DEEPGRAM_API_KEY,
             )
 
             NavigationItem(
