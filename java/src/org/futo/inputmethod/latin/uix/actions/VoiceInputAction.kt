@@ -56,6 +56,18 @@ import org.futo.voiceinput.shared.whisper.ModelManager
 import org.futo.voiceinput.shared.whisper.MultiModelRunConfiguration
 import java.util.Locale
 
+
+val DeepgramVoiceInputAction = Action(
+    icon = R.drawable.mic_fill,
+    name = R.string.deepgram_voice_input_action_title,
+    simplePressImpl = { it, _ ->
+        it.triggerVoiceInputDeepgram()
+    },
+    persistentState = null,
+    windowImpl = null,
+    shownInEditor = false
+)
+
 val SystemVoiceInputAction = Action(
     icon = R.drawable.mic_fill,
     name = R.string.system_voice_input_action_title,

@@ -51,6 +51,7 @@ interface KeyboardManagerForAction {
     fun closeActionWindow()
 
     fun triggerSystemVoiceInput()
+    fun triggerVoiceInputDeepgram()
 
     fun updateTheme(newTheme: ThemeOption)
     fun getThemeProvider(): DynamicThemeProvider

@@ -22,6 +22,7 @@ val AllActionsMap = mapOf(
     "themes" to ThemeAction,
     "undo" to UndoAction,
     "redo" to RedoAction,
+    "deepgram_voice_input" to DeepgramVoiceInputAction,
     "voice_input" to VoiceInputAction,
     "system_voice_input" to SystemVoiceInputAction,
     "switch_language" to SwitchLanguageAction,
@@ -236,7 +237,7 @@ fun String.toActionList(): List<Action> = split(",").mapNotNull { AllActionsMap[
 
 val DefaultActionSettings = mapOf(
     ActionCategory.ActionKey to listOf(EmojiAction),
-    ActionCategory.PinnedKey to listOf(VoiceInputAction),
+    ActionCategory.PinnedKey to listOf(DeepgramVoiceInputAction),
     ActionCategory.Favorites to listOf(SwitchLanguageAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, ThemeAction, KeyboardModeAction),
     ActionCategory.More to listOf(), // Remaining actions get populated automatically by ensureWellFormed
     ActionCategory.Disabled to listOf(MemoryDebugAction, SystemVoiceInputAction, BugViewerAction)

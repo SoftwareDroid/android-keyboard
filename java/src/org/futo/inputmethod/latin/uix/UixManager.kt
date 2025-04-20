@@ -285,6 +285,10 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
         )
     }
 
+    override fun triggerVoiceInputDeepgram() {
+        Log.d("Deepgram","start voice input");
+    }
+
     override fun updateTheme(newTheme: ThemeOption) {
         latinIME.updateTheme(newTheme)
     }
