@@ -17,6 +17,9 @@ import okhttp3.WebSocketListener
 import okhttp3.Response
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
+import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
+import org.futo.inputmethod.latin.uix.getSetting
 
 class DeepgramSpeechToText {
     companion object {
@@ -66,16 +69,16 @@ class DeepgramSpeechToText {
         }
     }
 
-    fun startWebsocket(context: Context,val manager: KeyboardManagerForAction) {
+    fun startWebsocket(context: Context,manager: KeyboardManagerForAction) {
         val context2 = manager.getContext()
-        val apiKey = context2.getSettings("deepgram_api_key")
-        if(apiKey == null or apiKey.isEmpty())
+        // Get settings from shared pref
+        val apiKey = context2.getSetting(DEEPGRAM_API_KEY)
+        if(apiKey.isEmpty())
         {
             Log.d(TAG, "API Key not set")
             return
         }
         this.context = context
-        context.getSettings()
         client = OkHttpClient()
         val language = "de"
         val url =
