@@ -24,11 +24,13 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
+import org.futo.inputmethod.deepgram_voicedictaton.DeepgramSpeechToText
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.uix.AUDIO_FOCUS
 import org.futo.inputmethod.latin.uix.Action
 import org.futo.inputmethod.latin.uix.ActionWindow
 import org.futo.inputmethod.latin.uix.CAN_EXPAND_SPACE
+import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
 import org.futo.inputmethod.latin.uix.DISALLOW_SYMBOLS
 import org.futo.inputmethod.latin.uix.ENABLE_SOUND
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
@@ -56,17 +58,37 @@ import org.futo.voiceinput.shared.whisper.ModelManager
 import org.futo.voiceinput.shared.whisper.MultiModelRunConfiguration
 import java.util.Locale
 
+//class DeepgramVoiceInputActionPersistentState(val manager: KeyboardManagerForAction) : PersistentActionState {
+//    val apiKey = manager.getContext().getSetting(DEEPGRAM_API_KEY)
+//    val dictationAPI = DeepgramSpeechToText()
+//    override suspend fun cleanUp() {
+//    }
+//}
 
 val DeepgramVoiceInputAction = Action(
     icon = R.drawable.mic_fill,
     name = R.string.deepgram_voice_input_action_title,
-    simplePressImpl = { it, _ ->
-        it.triggerVoiceInputDeepgram()
+    simplePressImpl = { manager, _  ->
+        manager.triggerVoiceInputDeepgram()
+//        val state = persistentState as DeepgramVoiceInputActionPersistentState //TODO: crash
+//        val isStreaming = state.dictationAPI.isStreaming()
+//        if (!isStreaming) {
+//            state.dictationAPI.startStreaming()
+//        } else
+//        {
+//            state.dictationAPI.stopStreaming()
+//        }
+//        changeDeepgramVoiceActionIcon(isStreaming)
     },
     persistentState = null,
     windowImpl = null,
     shownInEditor = false
 )
+
+fun changeDeepgramVoiceActionIcon(streaming: Boolean)
+{
+    DeepgramVoiceInputAction.icon = if (streaming) R.drawable.eye else R.drawable.mic_fill
+}
 
 val SystemVoiceInputAction = Action(
     icon = R.drawable.mic_fill,

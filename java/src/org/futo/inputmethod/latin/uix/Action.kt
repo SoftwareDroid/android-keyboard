@@ -134,7 +134,7 @@ enum class PersistentStateInitialization {
 }
 
 data class Action(
-    @DrawableRes val icon: Int,
+    @DrawableRes var icon: Int,
     @StringRes val name: Int,
     val canShowKeyboard: Boolean = false,
     val keepScreenAwake: Boolean = false,

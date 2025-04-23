@@ -52,10 +52,12 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.futo.inputmethod.deepgram_voicedictaton.DeepgramSpeechToText
 import org.futo.inputmethod.latin.SuggestedWords.SuggestedWordInfo
 import org.futo.inputmethod.latin.common.Constants
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.BasicThemeProvider
+import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
 import org.futo.inputmethod.latin.uix.DataStoreHelper
 import org.futo.inputmethod.latin.uix.DynamicThemeProvider
 import org.futo.inputmethod.latin.uix.DynamicThemeProviderOwner
@@ -106,7 +108,8 @@ private class UnlockedBroadcastReceiver(val onDeviceUnlocked: () -> Unit) : Broa
     }
 }
 
-open class InputMethodServiceCompose : InputMethodService(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
+open class InputMethodServiceCompose : InputMethodService(), LifecycleOwner, ViewModelStoreOwner,
+    SavedStateRegistryOwner {
     private lateinit var mLifecycleRegistry: LifecycleRegistry
     private lateinit var mViewModelStore: ViewModelStore
     private lateinit var mSavedStateRegistryController: SavedStateRegistryController
@@ -170,11 +173,13 @@ open class InputMethodServiceCompose : InputMethodService(), LifecycleOwner, Vie
 }
 
 class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripController,
-        DynamicThemeProviderOwner, FoldStateProvider, KeyboardSizeStateProvider {
+    DynamicThemeProviderOwner, FoldStateProvider, KeyboardSizeStateProvider {
     val latinIMELegacy = LatinIMELegacy(
         this as InputMethodService,
         this as LatinIMELegacy.SuggestionStripController
     )
+
+
 
     val inputLogic get() = latinIMELegacy.mInputLogic
 
@@ -191,12 +196,16 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     val themeOption get() = activeThemeOption
     val colorScheme get() = activeColorScheme
-    val keyboardColor get() = drawableProvider?.keyboardColor?.let { androidx.compose.ui.graphics.Color(it) } ?: colorScheme.keyboardSurface
+    val keyboardColor
+        get() = drawableProvider?.keyboardColor?.let {
+            androidx.compose.ui.graphics.Color(
+                it
+            )
+        } ?: colorScheme.keyboardSurface
     val actionBarColor get() = drawableProvider?.actionBarColor ?: colorScheme.surface
 
     val size: MutableState<ComputedKeyboardSize?> = mutableStateOf(null)
-    private fun calculateSize(): ComputedKeyboardSize
-            = sizingCalculator.calculate(
+    private fun calculateSize(): ComputedKeyboardSize = sizingCalculator.calculate(
         getPrimaryLayoutOverride(currentInputEditorInfo)
             ?: latinIMELegacy.mKeyboardSwitcher.keyboard?.mId?.mKeyboardLayoutSetName ?: "qwerty",
 
@@ -209,7 +218,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     private fun recreateKeyboard() {
         latinIMELegacy.updateTheme()
 
-        if(settingsRefreshRequired) {
+        if (settingsRefreshRequired) {
             latinIMELegacy.mKeyboardSwitcher.loadKeyboard(
                 currentInputEditorInfo ?: return,
                 latinIMELegacy.mSettings.current,
@@ -229,12 +238,14 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     private var isNavigationBarVisible = false
     fun updateNavigationBarVisibility(visible: Boolean? = null) {
-        if(visible != null) isNavigationBarVisible = visible
+        if (visible != null) isNavigationBarVisible = visible
 
-        if(SupportsNavbarExtension) {
+        if (SupportsNavbarExtension) {
             val shouldMaintainContrast = size.value is FloatingKeyboardSize
 
-            val color = (colorScheme.navigationBarColor ?: colorScheme.keyboardSurface).copy(alpha = 0.0f).toArgb()
+            val color =
+                (colorScheme.navigationBarColor ?: colorScheme.keyboardSurface).copy(alpha = 0.0f)
+                    .toArgb()
 
             window.window?.let { window ->
                 applyWindowColors(window, color, statusBar = false)
@@ -248,7 +259,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
             val color = colorScheme.navigationBarColor?.toArgb() ?: drawableProvider?.keyboardColor
 
             window.window?.let { window ->
-                if(color == null || !isNavigationBarVisible) {
+                if (color == null || !isNavigationBarVisible) {
                     applyWindowColors(window, Color.TRANSPARENT, statusBar = false)
                 } else {
                     applyWindowColors(window, color, statusBar = false)
@@ -274,16 +285,16 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
     private fun updateColorsIfDynamicChanged() {
         val key = getSetting(THEME_KEY)
-        if(key != activeThemeOption?.key) {
-            ThemeOptions[key]?.let { if(it.available(this)) updateTheme(it) }
+        if (key != activeThemeOption?.key) {
+            ThemeOptions[key]?.let { if (it.available(this)) updateTheme(it) }
             return
         }
 
-        if(activeThemeOption?.dynamic == true) {
+        if (activeThemeOption?.dynamic == true) {
             val currColors = activeColorScheme
             val nextColors = activeThemeOption!!.obtainColors(this)
 
-            if(currColors.differsFrom(nextColors)) {
+            if (currColors.differsFrom(nextColors)) {
                 updateDrawableProvider(nextColors)
                 recreateKeyboard()
                 return
@@ -291,7 +302,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         }
 
         // TODO: Verify this actually fixes anything
-        if(drawableProvider?.displayDpi != resources.displayMetrics.densityDpi) {
+        if (drawableProvider?.displayDpi != resources.displayMetrics.densityDpi) {
             updateDrawableProvider(activeColorScheme)
             recreateKeyboard()
             return
@@ -305,13 +316,14 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
                 oldSize is FloatingKeyboardSize && newSize is FloatingKeyboardSize -> {
                     oldSize.width != newSize.width || oldSize.height != newSize.height
                 }
+
                 else -> !newSize.dimensionsSameAs(oldSize)
             }
         } ?: true
 
         size.value = newSize
 
-        if(shouldInvalidateKeyboard) {
+        if (shouldInvalidateKeyboard) {
             invalidateKeyboard(true)
             updateNavigationBarVisibility()
         }
@@ -322,7 +334,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         updateNavigationBarVisibility()
         settingsRefreshRequired = settingsRefreshRequired || refreshSettings
 
-        if(!uixManager.isMainKeyboardHidden.value) {
+        if (!uixManager.isMainKeyboardHidden.value) {
             println("Recreating keyboard")
             recreateKeyboard()
         } else {
@@ -345,7 +357,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     // Called by UixManager when the intention is to subsequently call LegacyKeyboardView with hidden=false
     // Maybe this can be changed to LaunchedEffect
     fun onKeyboardShown() {
-        if(pendingRecreateKeyboard) {
+        if (pendingRecreateKeyboard) {
             pendingRecreateKeyboard = false
             recreateKeyboard()
         }
@@ -402,7 +414,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
         languageModelFacilitator.launchProcessor()
 
-        if(isDirectBootUnlocked) {
+        if (isDirectBootUnlocked) {
             languageModelFacilitator.loadHistoryLog()
         }
 
@@ -414,7 +426,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         launchJob {
             dataStore.data.collect {
                 drawableProvider?.let { provider ->
-                    if(provider is BasicThemeProvider) {
+                    if (provider is BasicThemeProvider) {
                         if (provider.hasUpdated(it)) {
                             activeThemeOption?.obtainColors?.let { f ->
                                 updateDrawableProvider(f(this@LatinIME))
@@ -432,7 +444,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
                     getSettingBlocking(SubtypesSetting).firstOrNull()
                 }
 
-                if(activeSubtype != null && activeSubtype != currentSubtype) {
+                if (activeSubtype != null && activeSubtype != currentSubtype) {
                     currentSubtype = activeSubtype
 
                     withContext(Dispatchers.Main) {
@@ -461,7 +473,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
 
             dataStore.data.collect { data ->
                 prev.keys.toList().forEach {
-                    if(data[KeyboardSettings[it]!!.key] != prev[it]) {
+                    if (data[KeyboardSettings[it]!!.key] != prev[it]) {
                         prev[it] = data[KeyboardSettings[it]!!.key]
                         onSizeUpdated()
                     }
@@ -538,7 +550,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     // shown, but resized to 0 if an action window is open
     @Composable
     internal fun LegacyKeyboardView(hidden: Boolean) {
-        val modifier = if(hidden) {
+        val modifier = if (hidden) {
             Modifier
                 .clipToBounds()
                 .size(0.dp)
@@ -551,7 +563,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         key(legacyInputView) {
             AndroidView(factory = {
                 legacyInputView!!.also {
-                    if(it.parent != null) (it.parent as ViewGroup).removeView(it)
+                    if (it.parent != null) (it.parent as ViewGroup).removeView(it)
                 }
             }, modifier = modifier, onRelease = {
                 val view = it as InputView
@@ -689,13 +701,13 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         val viewHeight = composeView!!.height
         val size = size.value ?: return
         latinIMELegacy.setInsets(outInsets!!.apply {
-            when(size) {
+            when (size) {
                 is FloatingKeyboardSize -> {
                     val height = uixManager.touchableHeight
 
-                    val left   = uixManager.floatingPosition.x.toInt()
-                    val right  = (uixManager.floatingPosition.x + size.width).roundToInt()
-                    val top    = uixManager.floatingPosition.y.toInt()
+                    val left = uixManager.floatingPosition.x.toInt()
+                    val right = (uixManager.floatingPosition.x + size.width).roundToInt()
+                    val top = uixManager.floatingPosition.y.toInt()
                     val bottom = (uixManager.floatingPosition.y + height).roundToInt()
 
                     touchableInsets = Insets.TOUCHABLE_INSETS_REGION
@@ -703,11 +715,12 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
                     contentTopInsets = viewHeight
                     visibleTopInsets = viewHeight
                 }
+
                 else -> {
                     touchableInsets = Insets.TOUCHABLE_INSETS_CONTENT
 
                     val touchableHeight = uixManager.touchableHeight
-                    val topInset = if(touchableHeight < 1 || touchableHeight >= viewHeight - 1) {
+                    val topInset = if (touchableHeight < 1 || touchableHeight >= viewHeight - 1) {
                         val actionBarHeight = sizingCalculator.calculateTotalActionBarHeightPx()
 
                         viewHeight - size.height - actionBarHeight
@@ -720,7 +733,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
                 }
             }
 
-            if(isInputModal || latinIMELegacy.mKeyboardSwitcher?.isShowingMoreKeysPanel == true) {
+            if (isInputModal || latinIMELegacy.mKeyboardSwitcher?.isShowingMoreKeysPanel == true) {
                 touchableInsets = Insets.TOUCHABLE_INSETS_REGION
                 touchableRegion.set(0, 0, composeView!!.width, composeView!!.height)
             }
@@ -789,7 +802,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     }
 
     fun postUpdateSuggestionStrip(inputStyle: Int): Boolean {
-        if(languageModelFacilitator.shouldPassThroughToLegacy()) return false
+        if (languageModelFacilitator.shouldPassThroughToLegacy()) return false
 
         languageModelFacilitator.updateSuggestionStripAsync(inputStyle);
         return true
@@ -800,7 +813,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     }
 
     fun refreshSuggestions() {
-        latinIMELegacy.mInputLogic.performUpdateSuggestionStripSync(latinIMELegacy.mSettings.current, SuggestedWords.INPUT_STYLE_TYPING)
+        latinIMELegacy.mInputLogic.performUpdateSuggestionStripSync(
+            latinIMELegacy.mSettings.current,
+            SuggestedWords.INPUT_STYLE_TYPING
+        )
     }
 
     fun forceForgetWord(suggestedWordInfo: SuggestedWordInfo) {
@@ -819,7 +835,7 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
     }
 
     fun rememberEmojiSuggestion(suggestion: SuggestedWordInfo) {
-        if(suggestion.mKindAndFlags == SuggestedWordInfo.KIND_EMOJI_SUGGESTION) {
+        if (suggestion.mKindAndFlags == SuggestedWordInfo.KIND_EMOJI_SUGGESTION) {
             lifecycleScope.launch {
                 withContext(Dispatchers.Default) {
                     useEmoji(suggestion.mWord)
@@ -845,7 +861,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         latinIMELegacy.loadSettings()
 
         inputLogic.finishInput()
-        inputLogic.startInput(RichInputMethodManager.getInstance().combiningRulesExtraValueOfCurrentSubtype, latinIMELegacy.mSettings.current)
+        inputLogic.startInput(
+            RichInputMethodManager.getInstance().combiningRulesExtraValueOfCurrentSubtype,
+            latinIMELegacy.mSettings.current
+        )
 
         val currentIC = currentInputConnection
         currentIC?.requestCursorUpdates(InputConnection.CURSOR_UPDATE_IMMEDIATE)
@@ -890,6 +909,10 @@ class LatinIME : InputMethodServiceCompose(), LatinIMELegacy.SuggestionStripCont
         updateTheme(ThemeOptions[getSettingBlocking(THEME_KEY)].orDefault(this))
 
         // TODO: Spell checker service
+    }
+
+    fun triggerVoiceInputDeepgram() {
+
     }
 
     override val foldState: FoldingOptions

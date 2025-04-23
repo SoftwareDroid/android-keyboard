@@ -92,6 +92,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.futo.inputmethod.accessibility.AccessibilityUtils
+import org.futo.inputmethod.deepgram_voicedictaton.DeepgramSpeechToText
 import org.futo.inputmethod.latin.AudioAndHapticFeedbackManager
 import org.futo.inputmethod.latin.BuildConfig
 import org.futo.inputmethod.latin.FoldingOptions
@@ -228,6 +229,8 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     override fun getContext(): Context {
         return latinIME
     }
+    val dictationAPI = DeepgramSpeechToText(this)
+
 
     override fun getLifecycleScope(): LifecycleCoroutineScope {
         return latinIME.lifecycleScope
@@ -286,7 +289,15 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     }
 
     override fun triggerVoiceInputDeepgram() {
+        if (dictationAPI.isStreaming()) {
+            dictationAPI.stopStreaming()
+        } else {
+            val deepgramAPI_Key = getContext().getSetting(DEEPGRAM_API_KEY)
+            dictationAPI.startWebsocket(deepgramAPI_Key)
+        }
+
         Log.d("Deepgram","start voice input");
+        latinIME.triggerVoiceInputDeepgram()
     }
 
     override fun updateTheme(newTheme: ThemeOption) {

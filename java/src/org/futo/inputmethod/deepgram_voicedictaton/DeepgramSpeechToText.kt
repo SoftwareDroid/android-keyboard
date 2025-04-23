@@ -1,6 +1,7 @@
 package org.futo.inputmethod.deepgram_voicedictaton
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -21,7 +22,7 @@ import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.getSetting
 
-class DeepgramSpeechToText {
+class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
     companion object {
         const val TAG = "WebSocketExample"
         const val SAMPLE_RATE = 16000 // Sample rate in Hz
@@ -32,19 +33,31 @@ class DeepgramSpeechToText {
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
-    private var context: Context? = null
+//    private var context: Context? = null
     private var startTime: Long = 0
     private var client: OkHttpClient? = null
 
-    fun startStreaming() {
+    fun isStreaming(): Boolean {
+        return isRecording
+    }
+
+    fun sendCloseStream()
+    {
+        var obj = JSONObject("{}")
+        obj.put("type","CloseStream");
+        webSocket!!.send(obj.toString())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startStreaming() {
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-        if (ActivityCompat.checkSelfPermission(
-                context!!,
-                Manifest.permission.RECORD_AUDIO
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+//        if (ActivityCompat.checkSelfPermission(
+//                context!!,
+//                Manifest.permission.RECORD_AUDIO
+//            ) != PackageManager.PERMISSION_GRANTED
+//        ) {
+//            return
+//        }
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
@@ -66,19 +79,17 @@ class DeepgramSpeechToText {
                 release()
                 audioRecord = null
             }
+            sendCloseStream()
         }
     }
 
-    fun startWebsocket(context: Context,manager: KeyboardManagerForAction) {
-        val context2 = manager.getContext()
-        // Get settings from shared pref
-        val apiKey = context2.getSetting(DEEPGRAM_API_KEY)
+    fun startWebsocket(apiKey: String) {
         if(apiKey.isEmpty())
         {
+
             Log.d(TAG, "API Key not set")
             return
         }
-        this.context = context
         client = OkHttpClient()
         val language = "de"
         val url =
@@ -91,6 +102,7 @@ class DeepgramSpeechToText {
         webSocket = client!!.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket opened")
+                manager.announce("Connected")
                 startStreaming()
             }
 
@@ -105,6 +117,7 @@ class DeepgramSpeechToText {
                             val transcript =
                                 obj.getJSONObject("channel").getJSONArray("alternatives")
                                     .getJSONObject(0).getString("transcript")
+                            manager.typeText(transcript)
                             Log.d("Transcript from WebSocket ", transcript)
                         }
                     }
@@ -119,6 +132,7 @@ class DeepgramSpeechToText {
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 webSocket.close(1000, null)
+
                 Log.d(TAG, "WebSocket closing: $reason")
             }
 
