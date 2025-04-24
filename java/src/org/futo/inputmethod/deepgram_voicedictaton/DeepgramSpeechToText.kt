@@ -8,6 +8,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.core.app.ActivityCompat
 import org.json.JSONException
 import org.json.JSONObject
@@ -29,7 +30,7 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
-
+    private var lastTranscript = "";
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
@@ -92,8 +93,10 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         }
         client = OkHttpClient()
         val language = "de"
+        val useSmartFormat = true
+        val numerals = true
         val url =
-            "wss://api.deepgram.com/v1/listen?punctuate=true&model=nova-2&encoding=linear16&language=$language&sample_rate=$SAMPLE_RATE"
+            "wss://api.deepgram.com/v1/listen?punctuate=true?numerals=$numerals?smart_format=$useSmartFormat&model=nova-2&encoding=linear16&language=$language&sample_rate=$SAMPLE_RATE"
         val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Token $apiKey")
@@ -102,7 +105,7 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         webSocket = client!!.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket opened")
-                manager.announce("Connected")
+//                manager.announce("Connected")
                 startStreaming()
             }
 
@@ -114,10 +117,16 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
                     if (type == "Results") {
                         val isFinal = obj.getBoolean("is_final")
                         if (isFinal) {
-                            val transcript =
+                            var transcript =
                                 obj.getJSONObject("channel").getJSONArray("alternatives")
                                     .getJSONObject(0).getString("transcript")
+                            // enforce to start with whitespace
+                            if(!lastTranscript.endsWith(" "))
+                            {
+                                transcript = " $transcript";
+                            }
                             manager.typeText(transcript)
+                            lastTranscript = transcript;
                             Log.d("Transcript from WebSocket ", transcript)
                         }
                     }
@@ -143,15 +152,40 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         })
     }
 
+
+
     private inner class AudioSender(private val bufferSize: Int) : Runnable {
+        private var lastSendTime: Long = 0
+        private var ENERGY_THRESHOLD = 0.04
+        private fun sendKeepAlive()
+        {
+            var obj = JSONObject("{}")
+            obj.put("type","KeepAlive");
+            webSocket!!.send(obj.toString())
+        }
+
         override fun run() {
             val audioBuffer = ByteArray(bufferSize)
             while (isRecording) {
                 val read = audioRecord!!.read(audioBuffer, 0, bufferSize)
                 if (read > 0) {
-                    webSocket!!.send(audioBuffer.toByteString(0, read))
+                    val energy = calculateEnergy(audioBuffer, read)
+                    Log.d("Energy "," level $energy")
+                    if (energy > ENERGY_THRESHOLD) {
+                        webSocket?.send(audioBuffer.toByteString(0, read))
+                        lastSendTime = System.currentTimeMillis()
+                    }
                 }
+                sendKeepAlive()
             }
         }
+    }
+
+    private fun calculateEnergy(buffer: ByteArray, size: Int): Double {
+        var energy = 0.0
+        for (i in 0 until size) {
+            energy += (buffer[i].toDouble() * buffer[i].toDouble())
+        }
+        return energy / size
     }
 }
