@@ -20,21 +20,24 @@ import okhttp3.Response
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
+import org.futo.inputmethod.latin.uix.DialogRequestItem
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.getSetting
 
-class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
+class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
     companion object {
         const val TAG = "WebSocketExample"
         const val SAMPLE_RATE = 16000 // Sample rate in Hz
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
+
     private var lastTranscript = "";
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
     private var isRecording = false
-//    private var context: Context? = null
+
+    //    private var context: Context? = null
     private var startTime: Long = 0
     private var client: OkHttpClient? = null
 
@@ -42,10 +45,9 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         return isRecording
     }
 
-    fun sendCloseStream()
-    {
+    fun sendCloseStream() {
         var obj = JSONObject("{}")
-        obj.put("type","CloseStream");
+        obj.put("type", "CloseStream");
         webSocket!!.send(obj.toString())
     }
 
@@ -73,7 +75,7 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
     }
 
     fun stopStreaming() {
-        if(isRecording) {
+        if (isRecording) {
             isRecording = false
             audioRecord?.apply {
                 stop()
@@ -85,9 +87,14 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
     }
 
     fun startWebsocket(apiKey: String) {
-        if(apiKey.isEmpty())
-        {
-
+        if (apiKey.isEmpty()) {
+            manager.requestDialog(
+                "Missing Deepgram API Key",
+                listOf(
+                    DialogRequestItem("OK") {},
+                ),
+                {}
+            )
             Log.d(TAG, "API Key not set")
             return
         }
@@ -96,7 +103,7 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         val useSmartFormat = true
         val numerals = true
         val url =
-            "wss://api.deepgram.com/v1/listen?punctuate=true?numerals=$numerals?smart_format=$useSmartFormat&model=nova-2&encoding=linear16&language=$language&sample_rate=$SAMPLE_RATE"
+            "wss://api.deepgram.com/v1/listen?punctuate=true&numerals=$numerals&smart_format=$useSmartFormat&model=nova-2&encoding=linear16&language=$language&sample_rate=$SAMPLE_RATE"
         val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Token $apiKey")
@@ -105,7 +112,7 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
         webSocket = client!!.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket opened")
-//                manager.announce("Connected")
+                manager.announce("Not Connected")
                 startStreaming()
             }
 
@@ -121,13 +128,15 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
                                 obj.getJSONObject("channel").getJSONArray("alternatives")
                                     .getJSONObject(0).getString("transcript")
                             // enforce to start with whitespace
-                            if(!lastTranscript.endsWith(" "))
-                            {
+                            if (!lastTranscript.endsWith(" ")) {
                                 transcript = " $transcript";
                             }
                             manager.typeText(transcript)
+                            //TODO: activate action can be used to switch language (via voice command)
+                            //TODO: we have to know the real text to trigger delete word, delete sentence
+                            //maybe step over words
                             lastTranscript = transcript;
-                            Log.d("Transcript from WebSocket ", transcript)
+                            Log.d(TAG, transcript)
                         }
                     }
                 } catch (e: JSONException) {
@@ -147,45 +156,67 @@ class DeepgramSpeechToText(private val manager : KeyboardManagerForAction) {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket error: ${t.message}")
+                manager.announce("Connection Failed")
                 stopStreaming();
             }
         })
     }
 
 
-
     private inner class AudioSender(private val bufferSize: Int) : Runnable {
         private var lastSendTime: Long = 0
-        private var ENERGY_THRESHOLD = 0.04
-        private fun sendKeepAlive()
-        {
-            var obj = JSONObject("{}")
-            obj.put("type","KeepAlive");
-            webSocket!!.send(obj.toString())
-        }
+        private var ENERGY_THRESHOLD = 30 //voice pakets below this threshold
+        private var SILENT_PAKETS_NUMBER_THRESHOLD = 5
+        private var KEEP_ALIVE_SEND_PERIOD_IN_MS = 5000
 
         override fun run() {
             val audioBuffer = ByteArray(bufferSize)
+            var isSending = true
+            var silenceCounter = 0
             while (isRecording) {
                 val read = audioRecord!!.read(audioBuffer, 0, bufferSize)
                 if (read > 0) {
                     val energy = calculateEnergy(audioBuffer, read)
-                    Log.d("Energy "," level $energy")
-                    if (energy > ENERGY_THRESHOLD) {
-                        webSocket?.send(audioBuffer.toByteString(0, read))
+//                    Log.d(TAG, " level $energy")
+                    // Only when we are below the threshold for SILENT_PAKETS_NUMBER_THRESHOLD we pause the sending
+                    if (energy >= ENERGY_THRESHOLD) {
+                        Log.d(TAG, "Send normal data paket")
+                        webSocket!!.send(audioBuffer.toByteString(0, read))
+                        lastSendTime = System.currentTimeMillis()
+                        silenceCounter = 0
+                        isSending = true
+                    } else {
+                        silenceCounter++
+                        if (silenceCounter > SILENT_PAKETS_NUMBER_THRESHOLD) {
+                            isSending = false
+                        }
+                        else
+                        {
+                            webSocket!!.send(audioBuffer.toByteString(0, read))
+                            lastSendTime = System.currentTimeMillis()
+                        }
+                    }
+                    // We need to send every 10s a keep alive
+                    if (!isSending && System.currentTimeMillis() - lastSendTime >= KEEP_ALIVE_SEND_PERIOD_IN_MS) {
+                        Log.d(TAG, "Send keep alive")
+                        //Message received: {"type":"Error","variant":"SchemaError","description":"Could not deserialize last text message: unknown variant `KeepAlive `, expected one of `CloseStream`, `Configure`, `Sync`, `KeepAlive`, `Finalize` at line 1 column 22","message":"{ \"type\": \"KeepAlive \"}"}
+                        var obj = JSONObject("{}")
+                        obj.put("type", "KeepAlive");
+                        webSocket!!.send(obj.toString())
                         lastSendTime = System.currentTimeMillis()
                     }
                 }
-                sendKeepAlive()
             }
+        }
+
+        private fun calculateEnergy(buffer: ByteArray, size: Int): Double {
+            var energy = 0.0
+            for (i in 0 until size) {
+                energy += (buffer[i].toDouble() * buffer[i].toDouble())
+            }
+            return energy / size
         }
     }
 
-    private fun calculateEnergy(buffer: ByteArray, size: Int): Double {
-        var energy = 0.0
-        for (i in 0 until size) {
-            energy += (buffer[i].toDouble() * buffer[i].toDouble())
-        }
-        return energy / size
-    }
+
 }
