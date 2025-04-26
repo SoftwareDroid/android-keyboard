@@ -1,15 +1,12 @@
 package org.futo.inputmethod.deepgram_voicedictaton
 
-import android.Manifest
 import android.annotation.SuppressLint
-import android.content.Context
-import android.content.pm.PackageManager
+import android.app.Activity
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
-import androidx.compose.ui.graphics.vector.rememberVectorPainter
-import androidx.core.app.ActivityCompat
+import com.google.android.material.snackbar.Snackbar
 import org.json.JSONException
 import org.json.JSONObject
 import okhttp3.OkHttpClient
@@ -19,10 +16,22 @@ import okhttp3.WebSocketListener
 import okhttp3.Response
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
-import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
 import org.futo.inputmethod.latin.uix.DialogRequestItem
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
-import org.futo.inputmethod.latin.uix.getSetting
+import java.util.Locale
+
+enum class VoiceCommand {
+    UNKOWN,
+    STOP,
+    SWITCH_LANGUAGE,
+    DELETE_WORD,
+    DELETE_SENTENCE
+}
+
+enum class Language(val code: String,val keywords: Map<String, VoiceCommand>) {
+    DE("de", mapOf("stopp" to VoiceCommand.STOP,"stop" to VoiceCommand.STOP,"lösche wort" to VoiceCommand.DELETE_WORD)),
+    EN("en",mapOf("stop" to VoiceCommand.STOP,"delete word" to VoiceCommand.DELETE_WORD))
+}
 
 class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
     companion object {
@@ -31,7 +40,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
         const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
-
+    private var currentLanguage : Language = Language.DE
     private var lastTranscript = "";
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
@@ -51,16 +60,19 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         webSocket!!.send(obj.toString())
     }
 
+    private fun showSnackbarMessage(message: String) {
+        manager.requestDialog(
+            "$message",
+            listOf(
+                DialogRequestItem("OK") {},
+            ),
+            {}
+        )
+    }
+
     @SuppressLint("MissingPermission")
     private fun startStreaming() {
         val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-//        if (ActivityCompat.checkSelfPermission(
-//                context!!,
-//                Manifest.permission.RECORD_AUDIO
-//            ) != PackageManager.PERMISSION_GRANTED
-//        ) {
-//            return
-//        }
         audioRecord = AudioRecord(
             MediaRecorder.AudioSource.MIC,
             SAMPLE_RATE,
@@ -86,6 +98,13 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         }
     }
 
+    private fun getVoiceCommandForText(text: String) : VoiceCommand
+    {
+        val lowerCaseText = text.toLowerCase(Locale.ROOT)
+        val trimmedMessage = lowerCaseText.trimEnd('.', '?', '!')
+        return currentLanguage.keywords.getOrDefault(trimmedMessage,VoiceCommand.UNKOWN)
+    }
+
     fun startWebsocket(apiKey: String) {
         if (apiKey.isEmpty()) {
             manager.requestDialog(
@@ -95,11 +114,10 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                 ),
                 {}
             )
-            Log.d(TAG, "API Key not set")
             return
         }
         client = OkHttpClient()
-        val language = "de"
+        val language = currentLanguage.code
         val useSmartFormat = true
         val numerals = true
         val url =
@@ -112,7 +130,6 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         webSocket = client!!.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket opened")
-                manager.announce("Not Connected")
                 startStreaming()
             }
 
@@ -127,21 +144,43 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                             var transcript =
                                 obj.getJSONObject("channel").getJSONArray("alternatives")
                                     .getJSONObject(0).getString("transcript")
-                            // enforce to start with whitespace
-                            if (!lastTranscript.endsWith(" ")) {
-                                transcript = " $transcript";
+
+                            val voiceCommand = getVoiceCommandForText(transcript)
+                            if(voiceCommand != VoiceCommand.UNKOWN)
+                            {
+                                showSnackbarMessage("Voice Command: ${voiceCommand.name}")
                             }
-                            manager.typeText(transcript)
-                            //TODO: activate action can be used to switch language (via voice command)
-                            //TODO: we have to know the real text to trigger delete word, delete sentence
-                            //maybe step over words
-                            lastTranscript = transcript;
-                            Log.d(TAG, transcript)
+                            when (voiceCommand)
+                            {
+                                VoiceCommand.UNKOWN -> typeText(transcript)
+                                VoiceCommand.STOP -> stopStreaming()
+                                VoiceCommand.SWITCH_LANGUAGE -> TODO()
+                                VoiceCommand.DELETE_WORD -> TODO()
+                                VoiceCommand.DELETE_SENTENCE -> TODO()
+                            }
+
                         }
                     }
                 } catch (e: JSONException) {
                     throw RuntimeException(e)
                 }
+            }
+
+            private fun typeText(transcript: String)
+            {
+                // enforce to start with whitespace
+                val formattedTranscript = if (!lastTranscript.endsWith(" ")) {
+                    " $transcript"
+                } else {
+                    transcript
+                }
+                manager.typeText(formattedTranscript)
+                //TODO: activate action can be used to switch language (via voice command)
+                //TODO: we have to know the real text to trigger delete word, delete sentence
+                //maybe step over words
+                lastTranscript = formattedTranscript;
+                Log.d(TAG, formattedTranscript)
+
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
@@ -156,7 +195,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket error: ${t.message}")
-                manager.announce("Connection Failed")
+                showSnackbarMessage("${t.message}")
                 stopStreaming();
             }
         })

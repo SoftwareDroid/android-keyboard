@@ -7,6 +7,7 @@ import org.futo.inputmethod.keyboard.internal.KeyboardCodesSet
 import org.futo.inputmethod.latin.R
 import org.futo.inputmethod.latin.settings.Settings
 import org.futo.inputmethod.latin.uix.Action
+import org.futo.inputmethod.latin.uix.DEEPGRAM_API_KEY
 import org.futo.inputmethod.latin.uix.PreferenceUtils
 import org.futo.inputmethod.latin.uix.SettingsKey
 import org.futo.inputmethod.latin.uix.USE_SYSTEM_VOICE_INPUT
@@ -51,7 +52,13 @@ object ActionRegistry {
     suspend fun getActionOverride(context: Context, action: Action): Action {
         return if(action == VoiceInputAction || action == SystemVoiceInputAction) {
             val useSystemVoiceInput = context.getSetting(USE_SYSTEM_VOICE_INPUT)
-            if(useSystemVoiceInput) {
+            val apiKey = context.getSetting(DEEPGRAM_API_KEY)
+            // use deepgram if we have an api key
+            if(apiKey.isNotEmpty())
+            {
+                DeepgramVoiceInputAction
+            }
+            else if(useSystemVoiceInput) {
                 SystemVoiceInputAction
             } else {
                 VoiceInputAction
@@ -238,7 +245,7 @@ fun String.toActionList(): List<Action> = split(",").mapNotNull { AllActionsMap[
 val DefaultActionSettings = mapOf(
     ActionCategory.ActionKey to listOf(EmojiAction),
     ActionCategory.PinnedKey to listOf(DeepgramVoiceInputAction),
-    ActionCategory.Favorites to listOf(SwitchLanguageAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, ThemeAction, KeyboardModeAction),
+    ActionCategory.Favorites to listOf(DeepgramVoiceInputAction,SwitchLanguageAction, UndoAction, RedoAction, TextEditAction, ClipboardHistoryAction, ThemeAction, KeyboardModeAction),
     ActionCategory.More to listOf(), // Remaining actions get populated automatically by ensureWellFormed
     ActionCategory.Disabled to listOf(MemoryDebugAction, SystemVoiceInputAction, BugViewerAction)
 )
