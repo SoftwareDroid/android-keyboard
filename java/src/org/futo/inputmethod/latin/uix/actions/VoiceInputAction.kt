@@ -468,6 +468,7 @@ private class DeepgramActionWindow(
                     //Stop Streaming
                     persistentState.dictation.stopStreaming()
                     // Restart everything
+                    uiState.lastVoiceCommand = "Language Switched"
                     uiState.status = READY_FOR_CONNECT
                 }
             )

@@ -18,6 +18,8 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.actions.DeepgramVoiceInputState
+import org.futo.inputmethod.latin.uix.actions.RedoAction
+import org.futo.inputmethod.latin.uix.actions.UndoAction
 import java.util.Locale
 
 enum class VoiceCommand {
@@ -25,6 +27,8 @@ enum class VoiceCommand {
     STOP,
     SWITCH_LANGUAGE,
     DELETE_WORD,
+    UNDO,
+    REDO,
     DELETE_SENTENCE
 }
 
@@ -37,7 +41,15 @@ enum class Language(val code: String, val keywords: Map<String, VoiceCommand>) {
             "lösche wort" to VoiceCommand.DELETE_WORD
         )
     ),
-    EN("en", mapOf("stop" to VoiceCommand.STOP, "delete word" to VoiceCommand.DELETE_WORD)),
+    EN(
+        "en",
+        mapOf(
+            "stop" to VoiceCommand.STOP,
+            "delete word" to VoiceCommand.DELETE_WORD,
+            "undo" to VoiceCommand.UNDO,
+            "redo" to VoiceCommand.REDO
+        )
+    ),
     MULTI("multi", mapOf("stop" to VoiceCommand.STOP, "delete word" to VoiceCommand.DELETE_WORD))
 }
 
@@ -109,7 +121,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         assert(apiKey.isNotEmpty())
         // get current language
         val locales = manager.getActiveLocales()
-        val locale = locales.firstOrNull()?: Locale.ROOT
+        val locale = locales.firstOrNull() ?: Locale.ROOT
         client = OkHttpClient()
         val usedLanguage: Language? = Language.entries.find { it.code == locale.language }
         currentLanguage = usedLanguage ?: Language.EN
@@ -152,7 +164,8 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                                 VoiceCommand.STOP -> {
                                     stopStreaming();manager.closeActionWindow()
                                 }
-
+                                VoiceCommand.REDO -> manager.activateAction(RedoAction)
+                                VoiceCommand.UNDO -> manager.activateAction(UndoAction)
                                 VoiceCommand.SWITCH_LANGUAGE -> TODO()
                                 VoiceCommand.DELETE_WORD -> TODO()
                                 VoiceCommand.DELETE_SENTENCE -> TODO()
