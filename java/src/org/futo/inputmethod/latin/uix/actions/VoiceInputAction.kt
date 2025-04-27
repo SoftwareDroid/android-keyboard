@@ -16,12 +16,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
@@ -367,8 +364,6 @@ private class DeepgramActionWindow(
         return stringResource(R.string.deepgram_voice_input_action_title)
     }
 
-    var apiKey: String = "" // by remember { mutableStateOf("") }
-
     fun isInternetAvailable(context: Context): Boolean {
         val connectivityManager =
             context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -411,7 +406,13 @@ private class DeepgramActionWindow(
                 ApiKeyInputScreen()
             } else if (uiState.status == DeepgramVoiceInputState.State.READY_FOR_CONNECT) {
                 // start Websocket
-                persistentState.dictation.startWebsocket(apiKey, uiState)
+                val apiKey = manager.getContext().getSetting(DEEPGRAM_API_KEY)
+                if(apiKey.isEmpty())
+                {
+                    uiState.status = DeepgramVoiceInputState.State.NO_API_KEY
+                    return
+                }
+                persistentState.dictation.startWebsocket(apiKey, uiState,locale)
             } else if (uiState.status == DeepgramVoiceInputState.State.WEBSOCKET_CONNECTED) {
                 DictateScreen()
             } else {
@@ -511,9 +512,8 @@ private class DeepgramActionWindow(
                 while (isLoading) {
                     if (isInternetAvailable(manager.getContext())) {
                         isLoading = false
-                        val apiKey = manager.getContext().getSetting(DEEPGRAM_API_KEY)
-                        uiState.status =
-                            if (apiKey.isEmpty()) DeepgramVoiceInputState.State.NO_API_KEY else READY_FOR_CONNECT
+
+                        uiState.status = READY_FOR_CONNECT
                     }
                     // Check every 500ms
                     delay(500)
@@ -532,24 +532,8 @@ private class DeepgramActionWindow(
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            TextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                label = { Text("Enter API Key") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Button(
-                onClick = {
-                    // Go to next state
-                    uiState.status = DeepgramVoiceInputState.State.READY_FOR_CONNECT
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Submit")
-            }
+            // We cannot enter one directly as we have no keyboard
+            Text("No API Key. Please enter one in the settings!")
         }
     }
 

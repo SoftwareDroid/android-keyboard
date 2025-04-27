@@ -105,10 +105,9 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
     }
 
 
-    fun startWebsocket(apiKey: String, uiCallback: DeepgramVoiceInputState) {
-        if (apiKey.isEmpty()) {
-            return
-        }
+    fun startWebsocket(apiKey: String, uiCallback: DeepgramVoiceInputState, locale: Locale) {
+        assert(apiKey.isNotEmpty())
+        //TODO: use language in locale
         client = OkHttpClient()
         val language = currentLanguage.code
         this.uiCallback = uiCallback
@@ -147,7 +146,10 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                             }
                             when (voiceCommand) {
                                 VoiceCommand.UNKOWN -> typeText(transcript)
-                                VoiceCommand.STOP -> stopStreaming()
+                                VoiceCommand.STOP -> {
+                                    stopStreaming();manager.closeActionWindow()
+                                }
+
                                 VoiceCommand.SWITCH_LANGUAGE -> TODO()
                                 VoiceCommand.DELETE_WORD -> TODO()
                                 VoiceCommand.DELETE_SENTENCE -> TODO()
