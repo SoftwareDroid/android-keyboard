@@ -1,28 +1,46 @@
 package org.futo.inputmethod.latin.uix.actions
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.traversalIndex
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import org.futo.inputmethod.deepgram_voicedictaton.DeepgramSpeechToText
 import org.futo.inputmethod.latin.R
@@ -39,6 +57,7 @@ import org.futo.inputmethod.latin.uix.PersistentActionState
 import org.futo.inputmethod.latin.uix.ResourceHelper
 import org.futo.inputmethod.latin.uix.USE_VAD_AUTOSTOP
 import org.futo.inputmethod.latin.uix.VERBOSE_PROGRESS
+import org.futo.inputmethod.latin.uix.actions.DeepgramVoiceInputState.State.READY_FOR_CONNECT
 import org.futo.inputmethod.latin.uix.getSetting
 import org.futo.inputmethod.latin.uix.setSetting
 import org.futo.inputmethod.latin.xlm.UserDictionaryObserver
@@ -57,38 +76,31 @@ import org.futo.voiceinput.shared.whisper.DecodingConfiguration
 import org.futo.voiceinput.shared.whisper.ModelManager
 import org.futo.voiceinput.shared.whisper.MultiModelRunConfiguration
 import java.util.Locale
+import androidx.compose.runtime.remember as remember1
 
-//class DeepgramVoiceInputActionPersistentState(val manager: KeyboardManagerForAction) : PersistentActionState {
-//    val apiKey = manager.getContext().getSetting(DEEPGRAM_API_KEY)
-//    val dictationAPI = DeepgramSpeechToText()
-//    override suspend fun cleanUp() {
-//    }
-//}
+class VoiceInputDeepgramPersistentState(val manager: KeyboardManagerForAction) :
+    PersistentActionState {
+    var dictation = DeepgramSpeechToText(manager)
+
+    override suspend fun cleanUp() {
+    }
+}
 
 val DeepgramVoiceInputAction = Action(
     icon = R.drawable.mic_fill,
     name = R.string.deepgram_voice_input_action_title,
-    simplePressImpl = { manager, _  ->
+    simplePressImpl = { manager, _ ->
         manager.triggerVoiceInputDeepgram()
-//        val state = persistentState as DeepgramVoiceInputActionPersistentState //TODO: crash
-//        val isStreaming = state.dictationAPI.isStreaming()
-//        if (!isStreaming) {
-//            state.dictationAPI.startStreaming()
-//        } else
-//        {
-//            state.dictationAPI.stopStreaming()
-//        }
-//        changeDeepgramVoiceActionIcon(isStreaming)
     },
-    persistentState = null,
-    windowImpl = null,
+    persistentState = { VoiceInputDeepgramPersistentState(it) },
+    windowImpl = { manager, persistentState ->
+        val locales = manager.getActiveLocales()
+        var uiState = DeepgramVoiceInputState()
+        var state = persistentState as VoiceInputDeepgramPersistentState
+        DeepgramActionWindow(manager, locales.firstOrNull() ?: Locale.ROOT, uiState, state)
+    },
     shownInEditor = false
 )
-
-fun changeDeepgramVoiceActionIcon(streaming: Boolean)
-{
-    DeepgramVoiceInputAction.icon = if (streaming) R.drawable.eye else R.drawable.mic_fill
-}
 
 val SystemVoiceInputAction = Action(
     icon = R.drawable.mic_fill,
@@ -105,17 +117,26 @@ val SystemVoiceInputAction = Action(
 @Composable
 fun NoModelInstalled(locale: Locale) {
     val context = LocalContext.current
-    Box(modifier = Modifier
-        .fillMaxSize()
-        .clickable(enabled = true,
-            onClickLabel = null,
-            onClick = {
-                context.openURI("https://keyboard.futo.org/voice-input-models", true)
-            },
-            role = null,
-            indication = null,
-            interactionSource = remember { MutableInteractionSource() })) {
-        Text("No voice input model installed for ${locale.getDisplayName(locale)}, tap to check options?", modifier = Modifier.align(Alignment.Center).padding(8.dp), textAlign = TextAlign.Center)
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .clickable(
+                enabled = true,
+                onClickLabel = null,
+                onClick = {
+                    context.openURI("https://keyboard.futo.org/voice-input-models", true)
+                },
+                role = null,
+                indication = null,
+                interactionSource = remember1 { MutableInteractionSource() })
+    ) {
+        Text(
+            "No voice input model installed for ${locale.getDisplayName(locale)}, tap to check options?",
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(8.dp),
+            textAlign = TextAlign.Center
+        )
     }
 }
 
@@ -189,7 +210,7 @@ private class VoiceInputActionWindow(
                 lifecycleScope = manager.getLifecycleScope(),
                 modelManager = state.modelManager
             )
-        } catch(e: ModelDoesNotExistException) {
+        } catch (e: ModelDoesNotExistException) {
             modelException.value = e
             return@launch
         }
@@ -217,17 +238,19 @@ private class VoiceInputActionWindow(
 
     @Composable
     override fun WindowContents(keyboardShown: Boolean) {
-        Box(modifier = Modifier
-            .fillMaxSize()
-            .clickable(enabled = true,
-                onClickLabel = null,
-                onClick = { recognizerView.value?.finish() },
-                role = null,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() })
-            .semantics(mergeDescendants = true) {
-                traversalIndex = -1.0f
-            }) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable(
+                    enabled = true,
+                    onClickLabel = null,
+                    onClick = { recognizerView.value?.finish() },
+                    role = null,
+                    indication = null,
+                    interactionSource = remember1 { MutableInteractionSource() })
+                .semantics(mergeDescendants = true) {
+                    traversalIndex = -1.0f
+                }) {
             Box(modifier = Modifier.align(Alignment.Center)) {
                 when {
                     modelException.value != null -> ModelDownloader(modelException.value!!)
@@ -261,7 +284,7 @@ private class VoiceInputActionWindow(
 
         // Only set the setting if bluetooth is available, else it would reset the setting
         // every time it's used without a bluetooth device connected.
-        if(device.bluetoothAvailable) {
+        if (device.bluetoothAvailable) {
             manager.getLifecycleScope().launch {
                 context.setSetting(PREFER_BLUETOOTH, device.bluetoothActive)
             }
@@ -302,7 +325,242 @@ private class VoiceInputNoModelWindow(val locale: Locale) : ActionWindow {
 
 }
 
-val VoiceInputAction = Action(icon = R.drawable.mic_fill,
+class DeepgramVoiceInputState() {
+
+    enum class State(val text: String) {
+        WAIT_FOR_INTERNET("Wait for Internet..."),
+        INVALID_API_KEY("Invalid API Key"),
+        NO_API_KEY("No API Key"),
+        READY_FOR_CONNECT("Internet works"),
+        WEBSOCKET_CONNECTED("Connected"),
+    }
+
+    var errorMessage by mutableStateOf("")
+
+    var lastVoiceCommand by mutableStateOf("")
+    var isVoiceCommandVisible by mutableStateOf(false)
+
+    var status by mutableStateOf(State.WAIT_FOR_INTERNET)
+
+    var twoLetterCode by mutableStateOf("XX")
+        private set
+
+    var isSpoken by mutableStateOf(false)
+
+    var energyLevel by mutableStateOf(0)
+
+    fun changeTwoLetterCode(newCode: String) {
+        twoLetterCode = newCode
+    }
+}
+
+
+private class DeepgramActionWindow(
+    val manager: KeyboardManagerForAction,
+    val locale: Locale,
+    val uiState: DeepgramVoiceInputState,
+    val persistentState: VoiceInputDeepgramPersistentState
+) :
+    ActionWindow {
+    @Composable
+    override fun windowName(): String {
+        return stringResource(R.string.deepgram_voice_input_action_title)
+    }
+
+    var apiKey: String = "" // by remember { mutableStateOf("") }
+
+    fun isInternetAvailable(context: Context): Boolean {
+        val connectivityManager =
+            context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val network = connectivityManager.activeNetwork ?: return false
+            val activeNetwork = connectivityManager.getNetworkCapabilities(network) ?: return false
+
+            return when {
+                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> true
+                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> true
+                activeNetwork.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> true
+                else -> false
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            val networkInfo = connectivityManager.activeNetworkInfo ?: return false
+            @Suppress("DEPRECATION")
+            return networkInfo.isConnected
+        }
+    }
+
+    @Composable
+    override fun WindowContents(keyboardShown: Boolean) {
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            if (uiState.errorMessage.isNotEmpty()) {
+                // Show error message if set
+                ErrorScreen()
+            } else if (uiState.status == DeepgramVoiceInputState.State.WAIT_FOR_INTERNET) {
+                // Wait until we have internet
+                WaitUntilInternetScreen()
+            } else if (uiState.status == DeepgramVoiceInputState.State.NO_API_KEY) {
+                ApiKeyInputScreen()
+            } else if (uiState.status == DeepgramVoiceInputState.State.READY_FOR_CONNECT) {
+                // start Websocket
+                persistentState.dictation.startWebsocket(apiKey, uiState)
+            } else if (uiState.status == DeepgramVoiceInputState.State.WEBSOCKET_CONNECTED) {
+                DictateScreen()
+            } else {
+                // something else
+                Text(
+                    text = uiState.status.text,
+                    modifier = Modifier.padding(top = 16.dp) // Add some space between the circle and the text
+                )
+            }
+
+
+        }
+    }
+
+    @Composable
+    fun ErrorScreen()
+    {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            Text(uiState.errorMessage)
+        }
+    }
+
+    @Composable
+    fun DictateScreen() {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // First Row: Icon
+            Icon(
+                painter = painterResource(id = if (uiState.isSpoken) R.drawable.mic_fill else R.drawable.baseline_mic_none_24),
+                contentDescription = "Microphone",
+                modifier = Modifier.size(48.dp) // Adjust size as needed
+            )
+            Text(
+                text = uiState.twoLetterCode,
+                fontSize = 16.sp
+            )
+            Spacer(modifier = Modifier.height(16.dp)) // Space between rows
+
+            // Second Row: Texts
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                LaunchedEffect(uiState.lastVoiceCommand) {
+                    if (uiState.lastVoiceCommand.isNotEmpty()) {
+                        uiState.isVoiceCommandVisible = true
+                        delay(2000) // Wait for 2 seconds
+                        uiState.isVoiceCommandVisible = false // Hide the command
+                    }
+                }
+                if(uiState.isVoiceCommandVisible) {
+                    Text(
+                        text = "Last Command: ${uiState.lastVoiceCommand}",
+                        color = Color.Green,
+                        fontSize = 16.sp
+                    )
+                }
+
+
+            }
+        }
+
+    }
+
+    @Composable
+    fun WaitUntilInternetScreen() {
+        // Use a Box to center the Column
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center // Center the content
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center // Center items vertically within the Column
+            ) {
+                CircularProgressIndicator()
+                Text(
+                    text = uiState.status.text,
+                    modifier = Modifier.padding(top = 16.dp) // Add some space between the circle and the text
+                )
+            }
+
+            // LaunchedEffect to handle loading logic
+            LaunchedEffect(Unit) {
+                manager.getContext()
+                var isLoading = true
+                while (isLoading) {
+                    if (isInternetAvailable(manager.getContext())) {
+                        isLoading = false
+                        val apiKey = manager.getContext().getSetting(DEEPGRAM_API_KEY)
+                        uiState.status =
+                            if (apiKey.isEmpty()) DeepgramVoiceInputState.State.NO_API_KEY else READY_FOR_CONNECT
+                    }
+                    // Check every 500ms
+                    delay(500)
+                }
+            }
+        }
+    }
+
+    @Composable
+    fun ApiKeyInputScreen() {
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            TextField(
+                value = apiKey,
+                onValueChange = { apiKey = it },
+                label = { Text("Enter API Key") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Button(
+                onClick = {
+                    // Go to next state
+                    uiState.status = DeepgramVoiceInputState.State.READY_FOR_CONNECT
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Submit")
+            }
+        }
+    }
+
+    override fun close() {
+        persistentState.dictation.stopStreaming()
+    }
+
+}
+
+val VoiceInputAction = Action(
+    icon = R.drawable.mic_fill,
     name = R.string.voice_input_action_title,
     simplePressImpl = null,
     keepScreenAwake = true,
@@ -310,9 +568,12 @@ val VoiceInputAction = Action(icon = R.drawable.mic_fill,
     windowImpl = { manager, persistentState ->
         val locales = manager.getActiveLocales()
 
-        val model = ResourceHelper.tryFindingVoiceInputModelForLocale(manager.getContext(), locales.firstOrNull() ?: Locale.ROOT)
+        val model = ResourceHelper.tryFindingVoiceInputModelForLocale(
+            manager.getContext(),
+            locales.firstOrNull() ?: Locale.ROOT
+        )
 
-        if(model == null) {
+        if (model == null) {
             VoiceInputNoModelWindow(locales.firstOrNull() ?: Locale.ROOT)
         } else {
             VoiceInputActionWindow(

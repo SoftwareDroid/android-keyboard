@@ -229,7 +229,7 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     override fun getContext(): Context {
         return latinIME
     }
-    val dictationAPI = DeepgramSpeechToText(this)
+//    val dictationAPI = DeepgramSpeechToText(this)
 
 
     override fun getLifecycleScope(): LifecycleCoroutineScope {
@@ -289,15 +289,15 @@ class UixActionKeyboardManager(val uixManager: UixManager, val latinIME: LatinIM
     }
 
     override fun triggerVoiceInputDeepgram() {
-        if (dictationAPI.isStreaming()) {
-            dictationAPI.stopStreaming()
-        } else {
-            val deepgramAPI_Key = getContext().getSetting(DEEPGRAM_API_KEY)
-            dictationAPI.startWebsocket(deepgramAPI_Key)
-        }
-
-        Log.d("Deepgram","start voice input");
-        latinIME.triggerVoiceInputDeepgram()
+//        if (dictationAPI.isStreaming()) {
+//            dictationAPI.stopStreaming()
+//        } else {
+//            val deepgramAPI_Key = getContext().getSetting(DEEPGRAM_API_KEY)
+//            dictationAPI.startWebsocket(deepgramAPI_Key)
+//        }
+//
+//        Log.d("Deepgram","start voice input");
+//        latinIME.triggerVoiceInputDeepgram()
     }
 
     override fun updateTheme(newTheme: ThemeOption) {
