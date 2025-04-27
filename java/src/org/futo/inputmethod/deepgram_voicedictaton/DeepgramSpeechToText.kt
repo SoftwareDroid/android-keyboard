@@ -105,9 +105,11 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         return currentLanguage.keywords.getOrDefault(trimmedMessage, VoiceCommand.UNKOWN)
     }
 
-
-    fun startWebsocket(apiKey: String, uiCallback: DeepgramVoiceInputState, locale: Locale) {
+    fun startWebsocket(apiKey: String, uiCallback: DeepgramVoiceInputState) {
         assert(apiKey.isNotEmpty())
+        // get current language
+        val locales = manager.getActiveLocales()
+        val locale = locales.firstOrNull()?: Locale.ROOT
         client = OkHttpClient()
         val usedLanguage: Language? = Language.entries.find { it.code == locale.language }
         currentLanguage = usedLanguage ?: Language.EN

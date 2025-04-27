@@ -20,6 +20,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -91,10 +92,9 @@ val DeepgramVoiceInputAction = Action(
     },
     persistentState = { VoiceInputDeepgramPersistentState(it) },
     windowImpl = { manager, persistentState ->
-        val locales = manager.getActiveLocales()
         var uiState = DeepgramVoiceInputState()
         var state = persistentState as VoiceInputDeepgramPersistentState
-        DeepgramActionWindow(manager, locales.firstOrNull() ?: Locale.ROOT, uiState, state)
+        DeepgramActionWindow(manager, uiState, state)
     },
     shownInEditor = false
 )
@@ -354,7 +354,6 @@ class DeepgramVoiceInputState() {
 
 private class DeepgramActionWindow(
     val manager: KeyboardManagerForAction,
-    val locale: Locale,
     val uiState: DeepgramVoiceInputState,
     val persistentState: VoiceInputDeepgramPersistentState
 ) :
@@ -389,6 +388,12 @@ private class DeepgramActionWindow(
     @Composable
     override fun WindowContents(keyboardShown: Boolean) {
 
+
+        // This block will run when the composable is removed from the composition
+        DisposableEffect(Unit) {
+            onDispose { persistentState.dictation.stopStreaming() }
+        }
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -407,12 +412,11 @@ private class DeepgramActionWindow(
             } else if (uiState.status == DeepgramVoiceInputState.State.READY_FOR_CONNECT) {
                 // start Websocket
                 val apiKey = manager.getContext().getSetting(DEEPGRAM_API_KEY)
-                if(apiKey.isEmpty())
-                {
+                if (apiKey.isEmpty()) {
                     uiState.status = DeepgramVoiceInputState.State.NO_API_KEY
                     return
                 }
-                persistentState.dictation.startWebsocket(apiKey, uiState,locale)
+                persistentState.dictation.startWebsocket(apiKey, uiState)
             } else if (uiState.status == DeepgramVoiceInputState.State.WEBSOCKET_CONNECTED) {
                 DictateScreen()
             } else {
@@ -427,9 +431,9 @@ private class DeepgramActionWindow(
         }
     }
 
+
     @Composable
-    fun ErrorScreen()
-    {
+    fun ErrorScreen() {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
@@ -454,11 +458,18 @@ private class DeepgramActionWindow(
             Icon(
                 painter = painterResource(id = if (uiState.isSpoken) R.drawable.mic_fill else R.drawable.baseline_mic_none_24),
                 contentDescription = "Microphone",
-                modifier = Modifier.size(48.dp) // Adjust size as needed
+                modifier = Modifier.size(48.dp)
             )
             Text(
                 text = uiState.twoLetterCode,
-                fontSize = 16.sp
+                fontSize = 16.sp,
+                modifier = Modifier.clickable {
+                    manager.activateAction(SwitchLanguageAction);
+                    //Stop Streaming
+                    persistentState.dictation.stopStreaming()
+                    // Restart everything
+                    uiState.status = READY_FOR_CONNECT
+                }
             )
             Spacer(modifier = Modifier.height(16.dp)) // Space between rows
 
@@ -473,7 +484,7 @@ private class DeepgramActionWindow(
                         uiState.isVoiceCommandVisible = false // Hide the command
                     }
                 }
-                if(uiState.isVoiceCommandVisible) {
+                if (uiState.isVoiceCommandVisible) {
                     Text(
                         text = "Last Command: ${uiState.lastVoiceCommand}",
                         color = Color.Green,
