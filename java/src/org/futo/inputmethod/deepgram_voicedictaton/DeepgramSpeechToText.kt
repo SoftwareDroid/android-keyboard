@@ -37,7 +37,8 @@ enum class Language(val code: String, val keywords: Map<String, VoiceCommand>) {
             "lösche wort" to VoiceCommand.DELETE_WORD
         )
     ),
-    EN("en", mapOf("stop" to VoiceCommand.STOP, "delete word" to VoiceCommand.DELETE_WORD))
+    EN("en", mapOf("stop" to VoiceCommand.STOP, "delete word" to VoiceCommand.DELETE_WORD)),
+    MULTI("multi", mapOf("stop" to VoiceCommand.STOP, "delete word" to VoiceCommand.DELETE_WORD))
 }
 
 class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
@@ -107,15 +108,15 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
 
     fun startWebsocket(apiKey: String, uiCallback: DeepgramVoiceInputState, locale: Locale) {
         assert(apiKey.isNotEmpty())
-        //TODO: use language in locale
         client = OkHttpClient()
-        val language = currentLanguage.code
+        val usedLanguage: Language? = Language.entries.find { it.code == locale.language }
+        currentLanguage = usedLanguage ?: Language.EN
         this.uiCallback = uiCallback
         uiCallback.changeTwoLetterCode(currentLanguage.code)
         val useSmartFormat = true
         val numerals = true
         val url =
-            "wss://api.deepgram.com/v1/listen?punctuate=true&numerals=$numerals&smart_format=$useSmartFormat&model=nova-2&encoding=linear16&language=$language&sample_rate=$SAMPLE_RATE"
+            "wss://api.deepgram.com/v1/listen?punctuate=true&numerals=$numerals&smart_format=$useSmartFormat&model=nova-2&encoding=linear16&language=${currentLanguage.code}&sample_rate=$SAMPLE_RATE"
         val request = Request.Builder()
             .url(url)
             .addHeader("Authorization", "Token $apiKey")
