@@ -20,9 +20,7 @@ import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.actions.DeepgramVoiceInputState
 import org.futo.inputmethod.latin.uix.actions.RedoAction
 import org.futo.inputmethod.latin.uix.actions.UndoAction
-import org.futo.inputmethod.updates.checkForUpdateAndSaveToPreferences
 import java.util.Locale
-import java.util.concurrent.atomic.AtomicLong
 
 enum class VoiceCommand {
     UNKOWN,
@@ -77,7 +75,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
 
     // needed for timeout
     @Volatile
-    private var isIgnoringTimeoutWhenNotSpoken = false
+    private var isStreamingMode = false
 
     @Volatile
     private var lastTimeGotTranscriptFromServer: Long = 0
@@ -111,7 +109,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         audioRecord!!.startRecording()
         isRecording = true
         startTime = System.currentTimeMillis()
-        if (!isIgnoringTimeoutWhenNotSpoken) {
+        if (!isStreamingMode) {
             lastTimeGotTranscriptFromServer = System.currentTimeMillis()
         }
         Thread(AudioSender(bufferSize)).start()
@@ -187,7 +185,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                                 VoiceCommand.UNDO -> manager.activateAction(UndoAction)
                                 VoiceCommand.SWITCH_LANGUAGE -> TODO()
                                 VoiceCommand.STREAMING_MODE -> {
-                                    isIgnoringTimeoutWhenNotSpoken = true;
+                                    isStreamingMode = true;
                                 }
 
                                 VoiceCommand.DELETE_WORD -> TODO()
@@ -208,7 +206,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                 } else {
                     transcript
                 }
-                if (!isIgnoringTimeoutWhenNotSpoken) {
+                if (!isStreamingMode) {
                     lastTimeGotTranscriptFromServer = System.currentTimeMillis()
                 }
                 manager.typeText(formattedTranscript)
@@ -279,7 +277,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                     }
                     if (!isSending) {
 
-                        if (!isIgnoringTimeoutWhenNotSpoken && currentTime - lastTimeGotTranscriptFromServer >= TIMEOUT_1) {
+                        if (!isStreamingMode && currentTime - lastTimeGotTranscriptFromServer >= TIMEOUT_1) {
                             uiCallback?.lastVoiceCommand = "Speak Timeout"
                             stopStreaming()
                         }
