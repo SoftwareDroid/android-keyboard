@@ -20,11 +20,14 @@ import org.futo.inputmethod.latin.uix.KeyboardManagerForAction
 import org.futo.inputmethod.latin.uix.actions.DeepgramVoiceInputState
 import org.futo.inputmethod.latin.uix.actions.RedoAction
 import org.futo.inputmethod.latin.uix.actions.UndoAction
+import org.futo.inputmethod.updates.checkForUpdateAndSaveToPreferences
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
 enum class VoiceCommand {
     UNKOWN,
     STOP,
+    STREAMING_MODE,
     SWITCH_LANGUAGE,
     DELETE_WORD,
     UNDO,
@@ -37,6 +40,7 @@ enum class Language(val code: String, val keywords: Map<String, VoiceCommand>) {
         "de",
         mapOf(
             "stopp" to VoiceCommand.STOP,
+            "streaming modus" to VoiceCommand.STREAMING_MODE,
             "stop" to VoiceCommand.STOP,
             "lösche wort" to VoiceCommand.DELETE_WORD
         )
@@ -46,6 +50,7 @@ enum class Language(val code: String, val keywords: Map<String, VoiceCommand>) {
         mapOf(
             "stop" to VoiceCommand.STOP,
             "delete word" to VoiceCommand.DELETE_WORD,
+            "streaming mode" to VoiceCommand.STREAMING_MODE,
             "undo" to VoiceCommand.UNDO,
             "redo" to VoiceCommand.REDO
         )
@@ -66,7 +71,17 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
     private var lastTranscript = "";
     private var webSocket: WebSocket? = null
     private var audioRecord: AudioRecord? = null
+
+    @Volatile
     private var isRecording = false
+
+    // needed for timeout
+    @Volatile
+    private var isIgnoringTimeoutWhenNotSpoken = false
+
+    @Volatile
+    private var lastTimeGotTranscriptFromServer: Long = 0
+
     private var uiCallback: DeepgramVoiceInputState? = null
 
     //    private var context: Context? = null
@@ -96,6 +111,9 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         audioRecord!!.startRecording()
         isRecording = true
         startTime = System.currentTimeMillis()
+        if (!isIgnoringTimeoutWhenNotSpoken) {
+            lastTimeGotTranscriptFromServer = System.currentTimeMillis()
+        }
         Thread(AudioSender(bufferSize)).start()
     }
 
@@ -113,7 +131,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
 
     private fun getVoiceCommandForText(text: String): VoiceCommand {
         val lowerCaseText = text.toLowerCase(Locale.ROOT)
-        val trimmedMessage = lowerCaseText.trimEnd('.', '?', '!')
+        val trimmedMessage = lowerCaseText.trimEnd('.', '?', '!', ',')
         return currentLanguage.keywords.getOrDefault(trimmedMessage, VoiceCommand.UNKOWN)
     }
 
@@ -151,7 +169,7 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                     if (type == "Results") {
                         val isFinal = obj.getBoolean("is_final")
                         if (isFinal) {
-                            var transcript =
+                            val transcript =
                                 obj.getJSONObject("channel").getJSONArray("alternatives")
                                     .getJSONObject(0).getString("transcript")
 
@@ -164,9 +182,14 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                                 VoiceCommand.STOP -> {
                                     stopStreaming();manager.closeActionWindow()
                                 }
+
                                 VoiceCommand.REDO -> manager.activateAction(RedoAction)
                                 VoiceCommand.UNDO -> manager.activateAction(UndoAction)
                                 VoiceCommand.SWITCH_LANGUAGE -> TODO()
+                                VoiceCommand.STREAMING_MODE -> {
+                                    isIgnoringTimeoutWhenNotSpoken = true;
+                                }
+
                                 VoiceCommand.DELETE_WORD -> TODO()
                                 VoiceCommand.DELETE_SENTENCE -> TODO()
                             }
@@ -184,6 +207,9 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                     " $transcript"
                 } else {
                     transcript
+                }
+                if (!isIgnoringTimeoutWhenNotSpoken) {
+                    lastTimeGotTranscriptFromServer = System.currentTimeMillis()
                 }
                 manager.typeText(formattedTranscript)
                 //TODO: activate action can be used to switch language (via voice command)
@@ -215,16 +241,19 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
         private var lastSendTime: Long = 0
         private var ENERGY_THRESHOLD = 30 //voice pakets below this threshold
         private var SILENT_PAKETS_NUMBER_THRESHOLD = 5
-        private var KEEP_ALIVE_SEND_PERIOD_IN_MS = 5000
+        private val KEEP_ALIVE_SEND_PERIOD_IN_MS = 5000
+        private val TIMEOUT_1 = 7000
 
         override fun run() {
             val audioBuffer = ByteArray(bufferSize)
             var isSending = true
             var silenceCounter = 0
+            //TODO: if we didn't get valid text for 10s then stop if not in streaming mode
             while (isRecording) {
                 val read = audioRecord!!.read(audioBuffer, 0, bufferSize)
                 if (read > 0) {
                     val energy = calculateEnergy(audioBuffer, read)
+                    val currentTime = System.currentTimeMillis()
 //                    Log.d(TAG, " level $energy")
                     // Only when we are below the threshold for SILENT_PAKETS_NUMBER_THRESHOLD we pause the sending
                     val isSpoken = energy >= ENERGY_THRESHOLD
@@ -248,15 +277,24 @@ class DeepgramSpeechToText(private val manager: KeyboardManagerForAction) {
                             lastSendTime = System.currentTimeMillis()
                         }
                     }
-                    // We need to send every 10s a keep alive
-                    if (!isSending && System.currentTimeMillis() - lastSendTime >= KEEP_ALIVE_SEND_PERIOD_IN_MS) {
-                        Log.d(TAG, "Send keep alive")
-                        //Message received: {"type":"Error","variant":"SchemaError","description":"Could not deserialize last text message: unknown variant `KeepAlive `, expected one of `CloseStream`, `Configure`, `Sync`, `KeepAlive`, `Finalize` at line 1 column 22","message":"{ \"type\": \"KeepAlive \"}"}
-                        var obj = JSONObject("{}")
-                        obj.put("type", "KeepAlive");
-                        webSocket!!.send(obj.toString())
-                        lastSendTime = System.currentTimeMillis()
+                    if (!isSending) {
+
+                        if (!isIgnoringTimeoutWhenNotSpoken && currentTime - lastTimeGotTranscriptFromServer >= TIMEOUT_1) {
+                            uiCallback?.lastVoiceCommand = "Speak Timeout"
+                            stopStreaming()
+                        }
+                        // We need to send every 10s a keep alive
+                        else if (currentTime - lastSendTime >= KEEP_ALIVE_SEND_PERIOD_IN_MS) {
+                            Log.d(TAG, "Send keep alive")
+                            //Message received: {"type":"Error","variant":"SchemaError","description":"Could not deserialize last text message: unknown variant `KeepAlive `, expected one of `CloseStream`, `Configure`, `Sync`, `KeepAlive`, `Finalize` at line 1 column 22","message":"{ \"type\": \"KeepAlive \"}"}
+                            var obj = JSONObject("{}")
+                            obj.put("type", "KeepAlive");
+                            webSocket!!.send(obj.toString())
+                            lastSendTime = System.currentTimeMillis()
+                        }
                     }
+
+
                 }
             }
         }
